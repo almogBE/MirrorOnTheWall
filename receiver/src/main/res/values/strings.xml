@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Mirror Receiver</string>
     <string name="skeleton_notice">Project skeleton (Phase 0). The receiver does not accept connections yet.</string>
+    <string name="protocol_info">Protocol v%1$d · %2$s</string>
 </resources>

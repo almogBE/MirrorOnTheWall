@@ -37,7 +37,9 @@ These are fixed. Changing their order needs the project owner's approval.
 
 AGP 9 notes:
 - AGP 9 has **built-in Kotlin**, so the Android modules do *not* apply `org.jetbrains.kotlin.android`. The root build declares `org.jetbrains.kotlin.jvm` (used by `:common`), which also pins the KGP version AGP uses.
-- Google Maven (`dl.google.com`) could not be reached from the build environment where this was written. AGP and AndroidX versions were therefore checked against Google's release-notes pages, not the Maven index. The first real `./gradlew assembleDebug` is the final check.
+- Google Maven was blocked at first, so the AGP and AndroidX versions were picked from Google's release-notes pages. Once `dl.google.com` was allowed, `./gradlew assembleDebug` passed with every pinned version unchanged (2026-11-19), and `lintDebug` reported no errors.
+- The SDK package for API 37 is named **`platforms;android-37.0`**. There is no `android-37`. `compileSdk = 37` resolves to it.
+- Without an NDK installed, AGP logs "Unable to strip … libjingle_peerconnection_so.so" and packages the native library unstripped. The debug sender APK is then about 63 MB. Release builds should install the NDK so the library gets stripped.
 - No `distributionSha256Sum` is pinned in the wrapper because the checksum host was blocked from the build environment. Add it from https://gradle.org/release-checksums/.
 
 ---
@@ -261,7 +263,7 @@ A full-screen Compose screen shows a large millisecond counter, updated on every
 
 ## 11. Open questions and risks
 
-1. AGP 9.5.1 + compileSdk 37 + AndroidX 2026 versions have not been through a real build here (Google Maven blocked). The first `assembleDebug` with SDK access is the check.
+1. ~~Unverified toolchain~~. Resolved: `assembleDebug` passes (§2).
 2. Whether `WIFI_MODE_FULL_HIGH_PERF` does anything on API 34+ (§7.1).
 3. Field-trial syntax for playout delay in M150 (§6.5).
 4. `isScreencast` true vs false, and its effect on smoothness (§6.2), to be measured.

@@ -11,7 +11,7 @@ Mirrors an Android phone's screen to an Android TV over local Wi-Fi with WebRTC.
 
 ## Build prerequisites
 - JDK 17 or newer
-- Android SDK with `platforms;android-37` and `build-tools;36.0.0`. AGP installs missing packages automatically once the SDK licenses are accepted.
+- Android SDK with `platforms;android-37.0`, `build-tools;36.0.0` and `platform-tools`. Optional: an NDK, so release builds strip the WebRTC native library.
 - Network access to `dl.google.com` (Google Maven), `repo1.maven.org` and `services.gradle.org`
 
 ```

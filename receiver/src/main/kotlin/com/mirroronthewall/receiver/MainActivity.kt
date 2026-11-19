@@ -14,7 +14,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        findViewById<TextView>(R.id.protocol_info).text =
-            "Protocol v${MirrorConstants.PROTOCOL_VERSION} · ${MirrorConstants.NSD_SERVICE_TYPE}"
+        findViewById<TextView>(R.id.protocol_info).text = getString(
+            R.string.protocol_info,
+            MirrorConstants.PROTOCOL_VERSION,
+            MirrorConstants.NSD_SERVICE_TYPE,
+        )
     }
 }
