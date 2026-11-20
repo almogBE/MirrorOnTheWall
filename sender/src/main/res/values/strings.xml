@@ -1,5 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Mirror Sender</string>
-    <string name="skeleton_notice">Project skeleton (Phase 0). Discovery and mirroring are not implemented yet.</string>
+
+    <string name="choose_tv">Choose a TV</string>
+    <string name="searching">Looking for TVs on this Wi-Fi network…</string>
+    <string name="discovery_failed">Automatic discovery failed: %1$s. Enter the TV\'s address instead.</string>
+    <string name="receiver_resolving">Resolving address…</string>
+    <string name="receiver_incompatible">Incompatible app version on the TV (protocol %1$d)</string>
+    <string name="enter_address">Enter TV address</string>
+    <string name="manual_explain">Type the address shown on the TV screen. Enter the pairing code if this phone hasn\'t connected to that TV before.</string>
+    <string name="address_hint">Address (e.g. 192.168.1.20:47913)</string>
+    <string name="address_invalid">Not a valid address</string>
+    <string name="pairing_code">Pairing code</string>
+    <string name="pairing_code_optional">Pairing code (if asked)</string>
+    <string name="connect">Connect</string>
+    <string name="cancel">Cancel</string>
+
+    <string name="connecting_to">Connecting to %1$s…</string>
+    <string name="pair_title">Pair with %1$s</string>
+    <string name="pair_explain">Enter the code shown on the TV. This is needed only the first time.</string>
+    <string name="pair_wrong">That code was wrong. Check the TV and try again.</string>
+    <string name="pair">Pair</string>
+
+    <string name="connected_to">Connected to %1$s</string>
+    <string name="paired_note">Paired. Next time this phone connects without a code.</string>
+    <string name="tv_address">TV address: %1$s</string>
+    <string name="tv_display">TV display: %1$s</string>
+    <string name="signaling_rtt">Signaling round-trip: %1$s ms</string>
+    <string name="signaling_rtt_pending">Signaling round-trip: measuring…</string>
+    <string name="phase1_no_media">Screen mirroring is not implemented yet (Phase 2). This screen only confirms that discovery, pairing and signaling work.</string>
+    <string name="disconnect">Disconnect</string>
 </resources>

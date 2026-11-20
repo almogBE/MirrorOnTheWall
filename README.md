@@ -2,7 +2,7 @@
 
 Mirrors an Android phone's screen to an Android TV over local Wi-Fi with WebRTC. No cloud services are involved.
 
-**Status: Phase 0.** This is the project skeleton. Nothing mirrors yet. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the phase plan.
+**Status: Phase 1.** Discovery, pairing and signaling work. There is no video yet. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and the phase plan.
 
 ## Modules
 - `:sender`: phone app (Compose, minSdk 29)

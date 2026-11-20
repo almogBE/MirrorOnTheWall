@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Mirror Receiver</string>
-    <string name="skeleton_notice">Project skeleton (Phase 0). The receiver does not accept connections yet.</string>
-    <string name="protocol_info">Protocol v%1$d · %2$s</string>
+
+    <string name="pairing_code_label">Pairing code</string>
+    <string name="status_waiting">Waiting for a phone. Open Mirror Sender on your phone.</string>
+    <string name="status_connected">Connected to %1$s. Screen mirroring is not implemented yet (Phase 2).</string>
+    <string name="status_starting">Starting…</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="status_failed">Could not start the connection server: %1$s</string>
+
+    <string name="address_format">Address: %1$s:%2$d</string>
+    <string name="address_no_network">No network. Connect this TV to Wi-Fi or Ethernet.</string>
+
+    <string name="discovery_registered">Phones on this network see this TV as “%1$s”.</string>
+    <string name="discovery_registering">Announcing on the local network…</string>
+    <string name="discovery_failed">Automatic discovery is unavailable (error %1$d). Enter the address on the phone instead.</string>
 </resources>

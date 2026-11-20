@@ -11,8 +11,11 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
-    <!-- Phase 0: no permissions yet. INTERNET, Wi-Fi lock and wake-lock
-         permissions are added in the phases that use them. -->
+    <!-- Signaling server socket. While targetSdk < 37, INTERNET also implicitly grants
+         local-network access (Android 17 local network protection). See ARCHITECTURE.md §2. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Reading the TV's own IP address for display (ConnectivityManager). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="false"
@@ -23,9 +26,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MirrorReceiver">
 
+        <!-- configChanges: keep the activity (and later the video renderer) alive
+             across TV config changes such as a remote/keyboard connect or a display
+             mode switch, instead of tearing down the session. -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"
+            android:exported="true"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />

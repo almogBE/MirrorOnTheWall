@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Phase 0: no permissions yet. Network, foreground-service and
-         media-projection permissions are added in the phases that use them. -->
+    <!-- Signaling WebSocket to the TV. While targetSdk < 37, INTERNET also implicitly
+         grants local-network access (Android 17 local network protection). NSD
+         discovery needs no extra permission. See ARCHITECTURE.md §2. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"

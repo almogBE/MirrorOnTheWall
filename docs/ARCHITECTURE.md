@@ -2,7 +2,7 @@
 
 This system mirrors an Android phone's screen (and later its system audio) to an Android TV over the local Wi-Fi network, using WebRTC. No cloud services are involved.
 
-Status: **Phase 0** (research, plan, empty multi-module project). Sections that describe later phases describe the plan, not working code. §10 says what exists today.
+Status: **Phase 1** (discovery, pairing and signaling, no media). Sections that describe later phases describe the plan, not working code. §10 says what exists today.
 
 ---
 
@@ -40,6 +40,7 @@ AGP 9 notes:
 - Google Maven was blocked at first, so the AGP and AndroidX versions were picked from Google's release-notes pages. Once `dl.google.com` was allowed, `./gradlew assembleDebug` passed with every pinned version unchanged (2026-11-19), and `lintDebug` reported no errors.
 - The SDK package for API 37 is named **`platforms;android-37.0`**. There is no `android-37`. `compileSdk = 37` resolves to it.
 - Without an NDK installed, AGP logs "Unable to strip … libjingle_peerconnection_so.so" and packages the native library unstripped. The debug sender APK is then about 63 MB. Release builds should install the NDK so the library gets stripped.
+- **Local network permission (Android 17).** Apps that *target* API 37 must declare and request the runtime permission `ACCESS_LOCAL_NETWORK` (NEARBY_DEVICES group) before using LAN sockets or NsdManager. Apps targeting below 37 that hold `INTERNET` get an implicit grant. This is another reason targetSdk stays at 36 for now. Raising it means adding that permission flow to both apps. Source: developer.android.com/privacy-and-security/local-network-permission.
 - No `distributionSha256Sum` is pinned in the wrapper because the checksum host was blocked from the build environment. Add it from https://gradle.org/release-checksums/.
 
 ---
@@ -84,8 +85,10 @@ There is also an `android-prefixed` variant that renames the packages to avoid c
 
 ```
 :common   Kotlin/JVM library (no Android dependencies)
-          signaling messages (kotlinx.serialization JSON), data models, constants,
-          stats row model + CSV schema. Unit-tested on the JVM.
+          signaling messages (kotlinx.serialization JSON), pairing policy,
+          WebSocket signaling server + client (Java-WebSocket), constants,
+          later the stats row model + CSV schema. Unit-tested on the JVM,
+          including real loopback-socket tests of server and client.
 :sender   phone app, Compose UI, minSdk 29
           discovery client, signaling client, MediaProjection foreground service,
           WebRTC send pipeline, profiles, thermal manager, latency-test screen
@@ -112,23 +115,32 @@ Threading model (both apps): one `Session` object owns one PeerConnection. All P
 
 ### 5.1 Transport
 - The receiver runs a WebSocket server (Java-WebSocket) on `0.0.0.0:47913`, or on any free port if that one is taken, at path `/signal`. The sender connects as a client.
-- Keep-alive uses WebSocket ping frames (Java-WebSocket's connection-lost timeout, set to about 3 s). Only one active session is allowed. A new `hello` from the same `senderId` replaces the old session (fast reconnect). A different sender gets `reject(BUSY)`.
+- Keep-alive uses WebSocket ping frames (Java-WebSocket's connection-lost timeout, 4 s). The sender also sends an app-level `ping` every second and shows the signaling round-trip time. A socket that doesn't send `hello` within 5 s is closed. Only one active session is allowed. A new `hello` from the same `senderId` replaces the old session (fast reconnect). A different sender gets `reject(BUSY)`.
 
 ### 5.2 Pairing
-- The TV shows a 4-digit code, regenerated each time the app starts.
-- The first connection from a sender needs the code, whether the TV was discovered or entered by IP. On success the TV issues a random `trustToken` that the sender stores per receiver `id`. Later connections send the token instead of the code. Token persistence and "forget device" are Phase 5. Phase 1 checks only the code.
+- The TV shows a 4-digit code, generated with `SecureRandom` when the app starts.
+- The first connection from a sender needs the code, whether the TV was discovered or entered by IP. On success the TV issues a random 256-bit `trustToken`, which the sender stores per receiver `id`. The TV stores only the token's SHA-256 hash, per `senderId`. Later connections send the token and need no code. *(Implemented in Phase 1, earlier than planned, because it makes reconnecting simple. A "forget paired phones" control remains Phase 5.)*
+- The code rotates after a successful pairing, since it was used and visible, and after 5 wrong codes in a row, which limits guessing to 5 tries per code out of 10,000. Code and token comparisons are constant-time.
 - This is LAN-only access control, not strong security. The WebRTC media itself is always DTLS-SRTP encrypted.
 
 ### 5.3 Messages (JSON with a `type` discriminator, `:common`)
 | type | direction | fields |
 |------|-----------|--------|
 | `hello` | S→R | `protocolVersion`, `senderId`, `senderName`, `pairingCode?`, `trustToken?` |
-| `welcome` | R→S | `receiverId`, `receiverName`, `trustToken`, `display {width,height,refreshHz}`, `decoders {h264, vp8: max WxH@fps}` |
-| `reject` | R→S | `reason` ∈ {`BAD_CODE`, `BUSY`, `VERSION_MISMATCH`} |
+| `welcome` | R→S | `protocolVersion`, `receiverId`, `receiverName`, `trustToken`, `display {widthPx, heightPx, refreshHz}`. Decoder capabilities are added in Phase 2. |
+| `reject` | R→S | `reason` ∈ {`PAIRING_REQUIRED`, `BAD_CODE`, `BUSY`, `VERSION_MISMATCH`, `PROTOCOL_ERROR`}, `receiverProtocolVersion`. The socket is then closed with code 4001. |
 | `offer` / `answer` | S→R / R→S | `sdp` |
 | `ice` | both | `sdpMid`, `sdpMLineIndex`, `candidate` (trickle ICE) |
 | `iceRestartRequest` | R→S | (the receiver detected a failure; the sender owns renegotiation) |
 | `bye` | both | `reason` |
+| `ping` / `pong` | S→R / R→S | `seq`, `senderTimeNanos` (echoed back, so RTT uses only the phone's clock) |
+
+Unknown fields are ignored, so adding an optional field doesn't require a version bump. Unknown message types are ignored after the handshake. WebSocket close codes: 1000 normal, 1002 wrong path, 4001 rejected, 4002 hello timeout, 4003 replaced by the same phone's new connection.
+
+Implementation notes:
+- `SignalingServer` and `SignalingClient` expose state as `StateFlow` and messages through a single-consumer `Channel`, so nothing is dropped between a session starting and the consumer reacting.
+- **Locking rule** (checked against the Java-WebSocket 1.6.0 source): `WebSocketImpl.closeConnection` is `synchronized` and calls `onClose` while holding that monitor. The server therefore never calls `send` or `close` while holding its own lock. Otherwise two threads could deadlock.
+- The TV app runs the server only while its activity is started (on screen). NSD advertising follows the server's actual listening port.
 
 Roles: the **sender is the offerer and the controlling ICE agent**. The receiver only answers. `welcome.display` and `decoders` let the sender choose its capture size and codec before creating the offer.
 
@@ -253,13 +265,12 @@ A full-screen Compose screen shows a large millisecond counter, updated on every
 
 ---
 
-## 10. What exists today (Phase 0)
+## 10. What exists today (Phase 1)
 
-- Gradle multi-module project (`:common`, `:sender`, `:receiver`), version catalog, Gradle 9.9.1 wrapper.
-- `:common`: `MirrorConstants` (service type, port, protocol version, TXT keys), with JVM unit tests.
-- `:sender`: a Compose activity that shows a skeleton notice. **No discovery, capture or streaming.**
-- `:receiver`: a TV activity with Leanback launcher entry and banner, showing a skeleton notice. **No server, advertising or rendering.**
-- The WebRTC dependency is declared in both apps so that the first `assembleDebug` verifies resolution and packaging. No WebRTC code is written yet.
+- `:common`: protocol messages and codec, `PairingAuthority`, `SignalingServer`, `SignalingClient`, `Endpoint` parsing. 25 JVM tests, 8 of them over real loopback sockets: pairing, token reuse, busy, same-phone replacement, version mismatch, port fallback, hello timeout, and receiver stop.
+- `:receiver`: TV home screen with name, `IP:port`, pairing code, discovery status and session status. NSD advertising, signaling server, persistent trust store. The screen stays on while a phone is connected.
+- `:sender`: Compose UI listing discovered TVs (live, with API 34+ and legacy resolve paths), manual address entry, pairing-code dialog, and a connected screen with signaling RTT and Disconnect.
+- **Not implemented yet:** any media. The receiver logs and ignores `offer`/`ice` messages. On the phone, the session lives in a ViewModel, so it ends when the app is closed. Phase 2 moves it into the MediaProjection foreground service. Automatic reconnect is Phase 3.
 
 ## 11. Open questions and risks
 
