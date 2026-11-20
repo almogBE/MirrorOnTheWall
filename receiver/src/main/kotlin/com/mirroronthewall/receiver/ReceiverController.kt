@@ -9,7 +9,12 @@ import android.view.Display
 import com.mirroronthewall.common.MirrorConstants
 import com.mirroronthewall.common.pairing.PairingAuthority
 import com.mirroronthewall.common.protocol.DisplayInfo
+import com.mirroronthewall.common.protocol.IceCandidate
+import com.mirroronthewall.common.protocol.Offer
 import com.mirroronthewall.common.protocol.RejectReason
+import com.mirroronthewall.receiver.media.ProxyVideoSink
+import com.mirroronthewall.receiver.media.ReceiverMediaSession
+import com.mirroronthewall.receiver.media.ReceiverWebRtc
 import com.mirroronthewall.common.signaling.SignalingServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,14 +29,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.webrtc.EglBase
+import org.webrtc.PeerConnection
 
 /**
  * Receiver-side composition of the signaling server, pairing, NSD advertising
  * and address monitoring. Owned by [MainActivity]: [start] and [stop] follow the
  * activity's started state, because the TV only mirrors while the app is on screen.
  *
- * Phase 1 scope: sessions are established and torn down, and Ping/Pong works.
- * Media (offer/answer, rendering) arrives in Phase 2.
+ * Each signaling session gets one [ReceiverMediaSession]: the phone's offer is
+ * answered and the remote video flows into [videoSink], which the activity points at
+ * its renderer.
  */
 class ReceiverController(
     private val context: Context,
@@ -45,6 +53,8 @@ class ReceiverController(
         val nsd: NsdAdvertiser.Status,
         val peer: SignalingServer.Peer?,
         val notice: String?,
+        /** WebRTC connection state of the current session, null before an offer arrives. */
+        val video: PeerConnection.PeerConnectionState?,
     )
 
     private val prefs = ReceiverPrefs(context)
@@ -58,6 +68,18 @@ class ReceiverController(
     private val advertiser = NsdAdvertiser(context)
     private val addresses = LocalAddressMonitor(context)
     private val notice = MutableStateFlow<String?>(null)
+    private val videoState = MutableStateFlow<PeerConnection.PeerConnectionState?>(null)
+
+    private val webRtc = ReceiverWebRtc(context)
+
+    /** EGL context to init the SurfaceViewRenderer with (shared with the decoder). */
+    val eglContext: EglBase.Context get() = webRtc.eglBase.eglBaseContext
+
+    /** Point [ProxyVideoSink.target] at the renderer while it's on screen. */
+    val videoSink = ProxyVideoSink()
+
+    // Touched only on ioScope's single thread.
+    private var media: ReceiverMediaSession? = null
 
     // Server start/stop block on sockets: run them in order on one background thread.
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -69,13 +91,13 @@ class ReceiverController(
         addresses.ipv4,
         pairing.pairingCode,
         advertiser.status,
-        combine(server.activePeer, notice, ::Pair),
-    ) { serverState, ip, code, nsd, (peer, note) ->
-        UiState(receiverName, serverState, ip, code, nsd, peer, note)
+        combine(server.activePeer, notice, videoState, ::Triple),
+    ) { serverState, ip, code, nsd, (peer, note, video) ->
+        UiState(receiverName, serverState, ip, code, nsd, peer, note, video)
     }.stateIn(
         uiScope,
         SharingStarted.Eagerly,
-        UiState(receiverName, SignalingServer.State.Stopped, null, pairing.pairingCode.value, NsdAdvertiser.Status.Idle, null, null),
+        UiState(receiverName, SignalingServer.State.Stopped, null, pairing.pairingCode.value, NsdAdvertiser.Status.Idle, null, null, null),
     )
 
     init {
@@ -116,17 +138,37 @@ class ReceiverController(
 
     /** Final cleanup. The controller can't be used afterwards. */
     fun release() {
-        ioScope.launch { server.close() }.invokeOnCompletion { ioScope.cancel() }
+        ioScope.launch {
+            server.close()
+            endMedia()
+            webRtc.release()
+        }.invokeOnCompletion { ioScope.cancel() }
     }
 
-    private fun onServerEvent(event: SignalingServer.Event) {
+    private fun endMedia() {
+        media?.dispose()
+        media = null
+        videoState.value = null
+    }
+
+    private suspend fun onServerEvent(event: SignalingServer.Event) {
         when (event) {
             is SignalingServer.Event.SessionStarted -> {
+                endMedia()
+                media = ReceiverMediaSession(
+                    webRtc = webRtc,
+                    sink = videoSink,
+                    send = server::send,
+                    onState = { videoState.value = it },
+                )
                 val p = event.peer
                 notice.value = if (p.newlyPaired) "Paired with ${p.senderName}" else null
                 Log.i(TAG, "Session ${p.sessionId} started: ${p.senderName} (${p.remoteAddress})")
             }
             is SignalingServer.Event.SessionEnded -> {
+                // A replaced session's end arrives before the new session's start, so
+                // this never tears down the new session's media.
+                endMedia()
                 notice.value = "${event.peer.senderName} disconnected: ${event.reason}"
                 Log.i(TAG, "Session ${event.peer.sessionId} ended: ${event.reason}")
             }
@@ -140,9 +182,19 @@ class ReceiverController(
                     RejectReason.PROTOCOL_ERROR -> "Rejected an invalid connection from $who"
                 }
             }
-            is SignalingServer.Event.MessageReceived -> {
-                // Phase 1: no media yet. Offer/ICE handling arrives in Phase 2.
-                Log.i(TAG, "Ignoring ${event.message::class.simpleName} (media not implemented yet)")
+            is SignalingServer.Event.MessageReceived -> when (val m = event.message) {
+                is Offer -> {
+                    val session = media ?: return
+                    try {
+                        session.onOffer(m.sdp)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Could not answer the offer", e)
+                        notice.value = "Could not start video: ${e.message}"
+                        server.endSession("receiver could not accept the video: ${e.message}")
+                    }
+                }
+                is IceCandidate -> media?.onRemoteIce(m)
+                else -> Log.i(TAG, "Ignoring ${m::class.simpleName}")
             }
         }
     }

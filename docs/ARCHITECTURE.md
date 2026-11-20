@@ -2,7 +2,7 @@
 
 This system mirrors an Android phone's screen (and later its system audio) to an Android TV over the local Wi-Fi network, using WebRTC. No cloud services are involved.
 
-Status: **Phase 1** (discovery, pairing and signaling, no media). Sections that describe later phases describe the plan, not working code. §10 says what exists today.
+Status: **Phase 2** (video end to end). Sections that describe later phases describe the plan, not working code. §10 says what exists today.
 
 ---
 
@@ -167,14 +167,18 @@ Consequences of the Android 14 rules:
 - A consent token can be used **once**, and a `MediaProjection` can create **one** VirtualDisplay. `ScreenCapturerAndroid.changeCaptureFormat` was checked in the bytecode: it calls `VirtualDisplay.resize()`, not release and recreate, so changing resolution (rotation, thermal, profile) is safe.
 - **The capture outlives the PeerConnection.** Reconnects and ICE restarts rebuild only the PeerConnection. The `MediaProjection`, capturer and `VideoTrack` stay alive, so the user is never asked for consent again within a session.
 
-Capture size: the VirtualDisplay is created at the **target encode size** (for example, long edge 1920 with the phone's aspect ratio), not at the panel's native size. Capturing smaller is the cheapest way to lower GPU and encoder load. Rotation is detected with a `DisplayListener` and handled with `changeCaptureFormat` (resize).
+Capture size (`CaptureSizing` in `:common`, unit-tested): the VirtualDisplay is created at the **target encode size**, not at the panel's native size. The phone's current, rotated screen is scaled down uniformly until it fits the TV's display box (from `welcome.display`) and the profile's edge caps, and both edges are floored to multiples of 16. It never upscales. For example, a 2400×1080 phone captures at 1920×864 in landscape and 480×1072 in portrait on a 1080p TV, since a portrait phone is shown at most 1080 px tall there. Rotation is detected with a `DisplayListener` (screen size computed from `Display.Mode` plus rotation, which works from a Service context) and applied with `changeCaptureFormat` (resize).
+
+Session ownership (implemented): the signaling connection and the media pipeline live in an application-scoped `SenderSession`, not the activity, so mirroring continues while the user is in other apps. `MirrorService` (a `LifecycleService`) only calls `startForeground`, starts the pipeline, and stops itself when the session reports that mirroring ended. **Stopping mirroring ends the signaling session too** (with `bye`). Starting again reconnects instantly with the stored token. Android 14 needs a fresh consent per capture anyway. This avoids a separate "media stopped but still connected" protocol state.
 
 `FLAG_SECURE` windows appear black. This is expected and is not worked around. The UI explains it.
 
 ### 6.2 Encoding
 - **H.264 hardware** first (`setCodecPreferences`), using `HardwareVideoEncoderFactory`. **VP8** is the fallback (hardware if available, otherwise libvpx software). HEVC is not used.
-- H.264 High profile (`enableH264HighProfile = true`) is offered when both sides support it. Constrained Baseline remains in the offer for TVs whose decoder doesn't. WebRTC never uses B-frames, so High doesn't add reorder latency.
+- **H.264 Constrained Baseline, not High** (`enableH264HighProfile = false`). Verified in the 150.7871.04 bytecode: when High is enabled, `HardwareVideoEncoder` hard-codes `profile = AVCProfileHigh (8)` and **`level = 256` (AVC Level 3)**. Level 3 allows about 720×576 at 25 fps. Encoders that enforce the level would reject or cap our 1080p60 stream. Constrained Baseline sets no level. It costs roughly 10–15% compression efficiency (no CABAC, no 8×8 transform), which is affordable at LAN bitrates. On the TV, the decoder factory advertises High only for `OMX.qcom.*` and `OMX.Exynos.*` codec names anyway. Revisit if a later build fixes the level.
+- Codec order set with `setCodecPreferences`: H.264 (packetization-mode 1 first), VP8, then RTX, RED and ULPFEC. VP9, AV1 and H.265 are removed.
 - The encoder runs in CBR mode (§3.1). The keyframe interval stays at WebRTC's default because PLI/FIR requests trigger keyframes on demand.
+- The hardware encoder reports a resolution alignment of 2. Captures are still sized to multiples of 16 (`CaptureSizing`) for older SoC encoders.
 - Content type: the `VideoSource` is created with **`isScreencast = false`**. In WebRTC, screencast mode favors resolution over frame rate and tolerates frame drops, which works against priority #1. Phase 3 will A/B test it.
 
 ### 6.3 Rate control and degradation
@@ -265,12 +269,13 @@ A full-screen Compose screen shows a large millisecond counter, updated on every
 
 ---
 
-## 10. What exists today (Phase 1)
+## 10. What exists today (Phase 2)
 
 - `:common`: protocol messages and codec, `PairingAuthority`, `SignalingServer`, `SignalingClient`, `Endpoint` parsing. 25 JVM tests, 8 of them over real loopback sockets: pairing, token reuse, busy, same-phone replacement, version mismatch, port fallback, hello timeout, and receiver stop.
 - `:receiver`: TV home screen with name, `IP:port`, pairing code, discovery status and session status. NSD advertising, signaling server, persistent trust store. The screen stays on while a phone is connected.
 - `:sender`: Compose UI listing discovered TVs (live, with API 34+ and legacy resolve paths), manual address entry, pairing-code dialog, and a connected screen with signaling RTT and Disconnect.
-- **Not implemented yet:** any media. The receiver logs and ignores `offer`/`ice` messages. On the phone, the session lives in a ViewModel, so it ends when the app is closed. Phase 2 moves it into the MediaProjection foreground service. Automatic reconnect is Phase 3.
+- **Video (Phase 2):** phone screen → `ScreenCapturerAndroid` in a `mediaProjection` foreground service → H.264 Constrained Baseline (VP8 fallback) at the Smooth settings (≤1920 px long edge, 60 fps, 2/8/14 Mbps, `MAINTAIN_FRAMERATE`) → host-candidate ICE → TV hardware decoder → full-screen `SurfaceViewRenderer` (aspect fit, hardware scaler). The TV requests ALLM/game mode and a 60 Hz-compatible display mode while video is on screen. Rotation resizes the capture. Notification with a Stop button. `FLAG_SECURE` content is explained in the UI.
+- **Not implemented yet:** profiles UI, Wi-Fi/wake locks, thermal handling, auto-reconnect and ICE restart, stats overlay and CSV, and the latency-test screen (all Phase 3), plus audio (Phase 4). A failed video connection currently ends the session with a message.
 
 ## 11. Open questions and risks
 
@@ -278,4 +283,5 @@ A full-screen Compose screen shows a large millisecond counter, updated on every
 2. Whether `WIFI_MODE_FULL_HIGH_PERF` does anything on API 34+ (§7.1).
 3. Field-trial syntax for playout delay in M150 (§6.5).
 4. `isScreencast` true vs false, and its effect on smoothness (§6.2), to be measured.
-5. Some TV H.264 decoders add latency unless a vendor low-latency key or `KEY_LOW_LATENCY` (API 30) is set. Phase 3 checks whether this WebRTC build's `AndroidVideoDecoder` sets it. If not, a decoder factory wrapper that sets it is an option.
+5. **Static screen means no frames.** The VirtualDisplay only produces frames when the screen content changes. While the phone shows a still screen, the TV gets no frames. That's harmless visually, but WebRTC's `freezeCount` will count those gaps as freezes. Phase 3 will repeat the last frame at a low rate (for example with `SurfaceTextureHelper.forceFrame()`, which exists in this build) so that freeze stats measure real stalls only.
+6. Some TV H.264 decoders add latency unless a vendor low-latency key or `KEY_LOW_LATENCY` (API 30) is set. Phase 3 checks whether this WebRTC build's `AndroidVideoDecoder` sets it. If not, a decoder factory wrapper that sets it is an option.

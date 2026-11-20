@@ -28,6 +28,15 @@
     <string name="tv_display">TV display: %1$s</string>
     <string name="signaling_rtt">Signaling round-trip: %1$s ms</string>
     <string name="signaling_rtt_pending">Signaling round-trip: measuring…</string>
-    <string name="phase1_no_media">Screen mirroring is not implemented yet (Phase 2). This screen only confirms that discovery, pairing and signaling work.</string>
+    <string name="start_mirroring">Start mirroring</string>
+    <string name="stop_mirroring">Stop mirroring</string>
+    <string name="mirroring_starting">Starting screen capture…</string>
+    <string name="mirroring_live">Mirroring %1$s @ %2$d fps</string>
+    <string name="mirroring_connection">Video connection: %1$s</string>
+    <string name="consent_denied">Screen capture was not allowed. Tap Start mirroring to try again.</string>
+    <string name="secure_content_note">Apps that protect their content (banking, DRM video such as Netflix) show as black on the TV. This is a system protection and is expected.</string>
+    <string name="notif_channel">Screen mirroring</string>
+    <string name="notif_title">Mirroring your screen</string>
+    <string name="notif_text">to %1$s</string>
     <string name="disconnect">Disconnect</string>
 </resources>

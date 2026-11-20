@@ -4,7 +4,9 @@
 
     <string name="pairing_code_label">Pairing code</string>
     <string name="status_waiting">Waiting for a phone. Open Mirror Sender on your phone.</string>
-    <string name="status_connected">Connected to %1$s. Screen mirroring is not implemented yet (Phase 2).</string>
+    <string name="status_connected">Connected to %1$s. Waiting for the phone to start mirroring…</string>
+    <string name="status_video_connecting">Connecting video from %1$s…</string>
+    <string name="status_video_failed">Video connection from %1$s failed.</string>
     <string name="status_starting">Starting…</string>
     <string name="status_stopped">Stopped</string>
     <string name="status_failed">Could not start the connection server: %1$s</string>

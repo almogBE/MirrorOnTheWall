@@ -1,8 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Idle / pairing screen. Phase 2 adds the full-screen video renderer on top. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Video renderer at the back. The idle/pairing panel sits on top and is hidden
+     once video frames arrive. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="MergeRootFrame"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- SurfaceViewRenderer measures itself to the video's aspect ratio (fit) and is centered. -->
+    <org.webrtc.SurfaceViewRenderer
+        android:id="@+id/video"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+<LinearLayout
+    android:id="@+id/info_panel"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/screen_background"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="48dp">
@@ -68,3 +84,4 @@
         android:textColor="#FFFFD180"
         android:textSize="18sp" />
 </LinearLayout>
+</FrameLayout>
