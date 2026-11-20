@@ -1,0 +1,74 @@
+name: Build
+
+# Every push: build both debug APKs, run the JVM tests, and publish the APKs as artifacts.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      # Actions are pinned to full commit SHAs. The comment shows the release tag.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      # The runner image ships an Android SDK (ANDROID_HOME), but not necessarily the
+      # exact packages this project compiles against. Install them explicitly.
+      # The API 37 package is named "android-37.0" (docs/ARCHITECTURE.md §2).
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
+
+      - name: Build debug APKs and run JVM tests
+        run: ./gradlew assembleDebug :common:test testDebugUnitTest --stacktrace
+
+      - name: Upload sender APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sender-debug-apk
+          path: sender/build/outputs/apk/debug/sender-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload receiver APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: receiver-debug-apk
+          path: receiver/build/outputs/apk/debug/receiver-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload test reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
